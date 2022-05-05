@@ -1,0 +1,199 @@
+import React, { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { Drawer } from "antd";
+import { ApplicationState } from "../../../store";
+import { getBalanceData as getPlaidBalance } from "../../../store/banking/plaid/action";
+import { getBalenceData as getYodleeBalance } from "../../../store/banking/yodlee/action";
+import {
+    PlaidAccountAPI,
+    PlaidAsset,
+} from "../../../store/banking/plaid/types";
+import { CollectionData } from "../../../store/setting/types";
+import { deleteDataCollectionFile } from "../../../store/auth/action";
+import Close from "@2fd/ant-design-icons/lib/Close";
+import Alert from "@2fd/ant-design-icons/lib/Alert";
+import { get_file } from "../../../util/s3getfile";
+import { Modal } from "antd";
+import { getPlaidAccounts } from "../../../store/auth/selector";
+
+const { confirm } = Modal;
+
+const Main: React.FC = () => {
+    const [visible, setVisible] = useState<boolean>(false);
+
+    const user = useSelector((state: ApplicationState) => state.auth.user);
+    const accounts = useSelector(getPlaidAccounts);
+    const [selectedAccount, setSelectedAccount] =
+        useState<PlaidAccountAPI | null>(null);
+    const documents = useSelector(
+        (state: ApplicationState) => state.auth.userCollectionData
+    );
+
+    const dispatch = useDispatch();
+    useEffect(() => {
+        loadInitialData();
+    }, [visible]);
+
+    useEffect(() => {
+        const script = document.createElement("script");
+        script.src = "https://static.hsappstatic.net/MeetingsEmbed/ex/MeetingsEmbedCode.js";
+        script.async = true;
+        document.body.appendChild(script);
+    }, [])
+
+    const getSortedDocumentList = () => {
+        let documentList: CollectionData[] = [];
+        documents.forEach((document) => {
+            documentList = [...documentList, ...document.datas];
+        });
+        documentList.sort(function (a: CollectionData, b: CollectionData) {
+            return a.created_at.localeCompare(b.created_at);
+        });
+        return documentList;
+    };
+
+    const loadInitialData = () => {
+        dispatch(getPlaidBalance());
+        dispatch(getYodleeBalance());
+    };
+
+    const getTotalBalance = () => {
+        let total = 0;
+        accounts.forEach((account) => {
+            total += account.balances.current;
+        });
+        return `$${total.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })}`;
+    };
+
+    const handeDeleteFile = (id: number) => {
+        confirm({
+            title: "Are you sure you want to delete this document?",
+            icon: <Alert style={{ color: "red" }} />,
+            okType: "danger",
+            okText: "Delete",
+            cancelText: "Cancel",
+            onOk() {
+                dispatch(deleteDataCollectionFile(id));
+            },
+        });
+    };
+
+    const downloadOrPreview = async (url) => {
+        let dataUrl = await get_file(url);
+        document.getElementById("download_btn")?.setAttribute("href", dataUrl);
+        document.getElementById("download_btn")?.click();
+    };
+
+    return (
+        <div className="p-10 mt-24">
+            <div className="w-full text-gray-700">
+                <div className="text-lg font-semibold text-gray-800 mb-5">
+                    Dashboard
+                </div>
+                <div className="text-2xl font-medium mb-5">{`Hello, ${user?.name}`}</div>
+                <div className="flex">
+                    <div className="w-5/12 pr-2">
+                        <div className="w-full bg-white p-4 pt-7 round-lg text-left">
+                            <div className="text-xl font-semibold mb-5">
+                                Terms and Agreements
+                            </div>
+                            <div className="w-full">
+                                <div className="py-5 text-center text-base font-semibold cursor-pointer underline">
+                                    <div
+                                        onClick={() =>
+                                            downloadOrPreview(
+                                                user?.disclosure_agreements
+                                                    ?.disclosure_pdf_link
+                                            )
+                                        }
+                                    >
+                                        Disclosures and agreements PDF
+                                    </div>
+                                    <a
+                                        href=""
+                                        target="_blank"
+                                        id="download_btn"
+                                        className="hidden"
+                                    ></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <Drawer
+                    visible={visible}
+                    placement="right"
+                    onClose={() => setVisible(false)}
+                    width={450}
+                    title={`Account ${selectedAccount?.name}`}
+                >
+                    {selectedAccount && (
+                        <>
+                            <div className="w-full text-lg">{`${
+                                selectedAccount.name
+                            }, ${selectedAccount.type
+                                .charAt(0)
+                                .toUpperCase()}${selectedAccount.type.slice(
+                                1
+                            )}`}</div>
+                            <div className="w-full mt-5">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="text-xl">
+                                            <th className="px-7 py-3 text-xs font-xl leading-4 tracking-wider text-left text-gray-500 uppercase border-b border-gray-200 bg-gray-50">
+                                                Name
+                                            </th>
+                                            <th className="px-6 py-3 text-xs font-xl leading-4 tracking-wider text-left text-gray-500 uppercase border-b border-gray-200 bg-gray-50">
+                                                Value
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="text-lg">
+                                        {selectedAccount.assets.map(
+                                            (
+                                                asset: PlaidAsset,
+                                                index: number
+                                            ) => (
+                                                <tr key={index}>
+                                                    <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-200 cursor-pointer">
+                                                        {asset.security.name}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-no-wrap border-b border-gray-200">
+                                                        {asset.institution_value.toLocaleString(
+                                                            undefined,
+                                                            {
+                                                                minimumFractionDigits: 2,
+                                                                maximumFractionDigits: 2,
+                                                            }
+                                                        )}
+                                                        $
+                                                    </td>
+                                                </tr>
+                                            )
+                                        )}
+                                        {selectedAccount.assets.length ===
+                                            0 && (
+                                            <tr>
+                                                <td
+                                                    className="px-6 py-4 text-center whitespace-no-wrap border-b border-gray-200 cursor-pointer"
+                                                    colSpan={2}
+                                                >
+                                                    No Assets Found
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
+                </Drawer>
+            </div>
+        </div>
+    );
+};
+
+export default Main;
